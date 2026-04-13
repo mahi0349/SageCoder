@@ -24,3 +24,8 @@
     background-color: #4b5563;
   }
 }
+
+.deco-bug { background-color: rgba(239, 68, 68, 0.2) !important; }
+.deco-perf { background-color: rgba(234, 179, 8, 0.2) !important; }
+.deco-clean { background-color: rgba(16, 185, 129, 0.2) !important; }
+

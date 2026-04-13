@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { fetchApi } from '../api';
 import FileTree from '../components/FileTree';
-import { Editor } from '@monaco-editor/react';
-import { Github, FolderGit2, Search, Loader2, Code2, Sparkles, LogOut, Bug, Zap, CheckCircle2 } from 'lucide-react';
+import { Editor, useMonaco } from '@monaco-editor/react';
+import { GitBranch, FolderGit2, Search, Loader2, Code2, Sparkles, LogOut, Bug, Zap, CheckCircle2 } from 'lucide-react';
 
 const getLanguage = (fileName) => {
   if (!fileName) return 'javascript';
@@ -36,6 +36,10 @@ const Dashboard = () => {
 
   const [reviewing, setReviewing] = useState(false);
   const [reviewResult, setReviewResult] = useState(null);
+
+  const monaco = useMonaco();
+  const editorRef = useRef(null);
+  const [decorations, setDecorations] = useState([]);
 
   useEffect(() => {
     fetchApi('/auth/me')
@@ -119,6 +123,47 @@ const Dashboard = () => {
     } finally {
       setReviewing(false);
     }
+  };
+
+  const handleEditorDidMount = (editor) => {
+    editorRef.current = editor;
+  };
+
+  useEffect(() => {
+    if (editorRef.current && monaco && reviewResult?.feedback) {
+      const newDecorations = [];
+      const addDeco = (items, colorClass) => {
+        if (!items) return;
+        items.forEach(item => {
+           if (item.line) {
+             newDecorations.push({
+               range: new monaco.Range(item.line, 1, item.line, 1),
+               options: {
+                 isWholeLine: true,
+                 className: colorClass,
+               }
+             });
+           }
+        });
+      };
+      
+      addDeco(reviewResult.feedback.bugs, 'deco-bug');
+      addDeco(reviewResult.feedback.performance, 'deco-perf');
+      addDeco(reviewResult.feedback.clean_code, 'deco-clean');
+      
+      const decoIds = editorRef.current.deltaDecorations(decorations, newDecorations);
+      setDecorations(decoIds);
+    } else if (editorRef.current && !reviewResult && decorations.length > 0) {
+      editorRef.current.deltaDecorations(decorations, []);
+      setDecorations([]);
+    }
+  }, [reviewResult, monaco]);
+
+  const handleFeedbackClick = (line) => {
+    if (!line || !editorRef.current) return;
+    editorRef.current.revealLineInCenter(line);
+    editorRef.current.setPosition({ lineNumber: line, column: 1 });
+    editorRef.current.focus();
   };
 
   return (
@@ -248,6 +293,7 @@ const Dashboard = () => {
                       language={getLanguage(selectedFile.name)}
                       theme="vs-dark"
                       value={fileContent || ''}
+                      onMount={handleEditorDidMount}
                       options={{
                         readOnly: true,
                         minimap: { enabled: false },
@@ -276,7 +322,11 @@ const Dashboard = () => {
                        </h4>
                        {reviewResult.feedback?.bugs?.length > 0 ? (
                          reviewResult.feedback.bugs.map((item, id) => (
-                           <div key={id} className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                           <div 
+                             key={id} 
+                             onClick={() => handleFeedbackClick(item.line)}
+                             className="bg-gray-900 hover:bg-gray-800 border border-gray-800 hover:border-red-500/30 cursor-pointer rounded-lg p-4 transition-colors"
+                           >
                              <div className="font-mono text-xs text-red-400 mb-2">Line {item.line}</div>
                              <p className="text-gray-300 text-sm mb-2">{item.issue}</p>
                              <div className="bg-gray-950 p-2 rounded text-xs text-gray-400 border border-gray-800 font-mono whitespace-pre-wrap">{item.suggestion}</div>
@@ -294,7 +344,11 @@ const Dashboard = () => {
                        </h4>
                        {reviewResult.feedback?.performance?.length > 0 ? (
                          reviewResult.feedback.performance.map((item, id) => (
-                           <div key={id} className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                           <div 
+                             key={id} 
+                             onClick={() => handleFeedbackClick(item.line)}
+                             className="bg-gray-900 hover:bg-gray-800 border border-gray-800 hover:border-yellow-500/30 cursor-pointer rounded-lg p-4 transition-colors"
+                           >
                              <div className="font-mono text-xs text-yellow-500 mb-2">Line {item.line}</div>
                              <p className="text-gray-300 text-sm mb-2">{item.issue}</p>
                              <div className="bg-gray-950 p-2 rounded text-xs text-gray-400 border border-gray-800 font-mono whitespace-pre-wrap">{item.suggestion}</div>
@@ -312,7 +366,11 @@ const Dashboard = () => {
                        </h4>
                        {reviewResult.feedback?.clean_code?.length > 0 ? (
                          reviewResult.feedback.clean_code.map((item, id) => (
-                           <div key={id} className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                           <div 
+                             key={id} 
+                             onClick={() => handleFeedbackClick(item.line)}
+                             className="bg-gray-900 hover:bg-gray-800 border border-gray-800 hover:border-emerald-500/30 cursor-pointer rounded-lg p-4 transition-colors"
+                           >
                              <div className="font-mono text-xs text-emerald-400 mb-2">Line {item.line}</div>
                              <p className="text-gray-300 text-sm mb-2">{item.issue}</p>
                              <div className="bg-gray-950 p-2 rounded text-xs text-gray-400 border border-gray-800 font-mono whitespace-pre-wrap">{item.suggestion}</div>
@@ -341,7 +399,7 @@ const Dashboard = () => {
             ) : (
               <>
                  <div className="w-24 h-24 mb-6 rounded-full bg-gray-900 flex items-center justify-center border border-gray-800 shadow-2xl relative">
-                     <Github size={40} className="text-indigo-500/50" />
+                     <GitBranch size={40} className="text-indigo-500/50" />
                      <Sparkles size={20} className="absolute -top-2 -right-2 text-indigo-400 animate-pulse" />
                  </div>
                  <h3 className="text-xl font-semibold text-gray-300 mb-2">Welcome to SageCoder</h3>
