@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import passport from './config/passport.js';
 import authRoutes from './routes/authRoutes.js';
 import githubRoutes from './routes/githubRoutes.js';
+import reviewRoutes from './routes/reviewRoutes.js';
 
 dotenv.config();
 
@@ -29,6 +30,7 @@ mongoose.connect(process.env.MONGODB_URI)
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/github', githubRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'SageCoder API is running' });

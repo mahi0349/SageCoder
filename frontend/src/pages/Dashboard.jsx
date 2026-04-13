@@ -1,7 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { fetchApi } from '../api';
 import FileTree from '../components/FileTree';
-import { Github, FolderGit2, Search, Loader2, Code2, Sparkles, LogOut } from 'lucide-react';
+import { Editor } from '@monaco-editor/react';
+import { Github, FolderGit2, Search, Loader2, Code2, Sparkles, LogOut, Bug, Zap, CheckCircle2 } from 'lucide-react';
+
+const getLanguage = (fileName) => {
+  if (!fileName) return 'javascript';
+  const ext = fileName.split('.').pop().toLowerCase();
+  const map = {
+    js: 'javascript', jsx: 'javascript',
+    ts: 'typescript', tsx: 'typescript',
+    py: 'python',
+    go: 'go',
+    java: 'java',
+    json: 'json',
+    html: 'html',
+    css: 'css',
+    md: 'markdown'
+  };
+  return map[ext] || 'plaintext';
+};
 
 const Dashboard = () => {
   const [user, setUser] = useState(null);
@@ -16,8 +34,10 @@ const Dashboard = () => {
   const [fileContent, setFileContent] = useState(null);
   const [loadingFile, setLoadingFile] = useState(false);
 
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewResult, setReviewResult] = useState(null);
+
   useEffect(() => {
-    // Fetch user and repos on mount
     fetchApi('/auth/me')
       .then(data => setUser(data))
       .catch(err => console.error("Not authenticated", err));
@@ -37,6 +57,7 @@ const Dashboard = () => {
     setSelectedRepo(repo);
     setSelectedFile(null);
     setFileContent(null);
+    setReviewResult(null);
     setLoadingTree(true);
     setRepoTree([]);
     
@@ -53,18 +74,18 @@ const Dashboard = () => {
   };
 
   const handleFileSelect = async (file) => {
-    if (file.type !== 'blob') return; // only fetch files
+    if (file.type !== 'blob') return;
     
     setSelectedFile(file);
     setLoadingFile(true);
     setFileContent(null);
+    setReviewResult(null);
     
     try {
       const data = await fetchApi(
         `/github/repos/${selectedRepo.owner.login}/${selectedRepo.name}/contents?path=${encodeURIComponent(file.path)}&branch=${selectedRepo.default_branch}`
       );
       if (data && data.content) {
-        // GitHub returns base64 encoded content
         const decodedContent = atob(data.content);
         setFileContent(decodedContent);
       } else {
@@ -78,11 +99,33 @@ const Dashboard = () => {
     }
   };
 
+  const handleReviewCode = async () => {
+    if (!fileContent) return;
+    setReviewing(true);
+    setReviewResult(null);
+    try {
+      const result = await fetchApi('/reviews', {
+        method: 'POST',
+        body: JSON.stringify({
+          codeSnippet: fileContent,
+          fileName: selectedFile.path,
+          repoName: selectedRepo.name,
+        })
+      });
+      setReviewResult(result);
+    } catch (error) {
+      console.error("Review fail", error);
+      alert(error.message);
+    } finally {
+      setReviewing(false);
+    }
+  };
+
   return (
     <div className="h-screen w-full bg-gray-950 text-gray-200 flex overflow-hidden font-sans">
       
       {/* Left Sidebar - Repositories */}
-      <div className="w-72 bg-gray-900 border-r border-gray-800 flex flex-col relative z-20 shadow-xl shadow-black/50">
+      <div className="w-72 bg-gray-900 border-r border-gray-800 flex flex-col relative z-20 shadow-xl shadow-black/50 overflow-hidden shrink-0">
         <div className="p-4 border-b border-gray-800 flex items-center justify-between">
           <div className="flex items-center gap-2 text-white font-bold text-lg">
             <Sparkles className="text-indigo-500" size={24}/>
@@ -141,7 +184,7 @@ const Dashboard = () => {
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-800">
+        <div className="p-4 border-t border-gray-800 mt-auto">
              <button onClick={() => { window.location.href = 'http://localhost:5000/api/auth/logout' }} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors w-full p-2 hover:bg-gray-800 rounded-lg">
                 <LogOut size={16} /> Logout
              </button>
@@ -149,7 +192,7 @@ const Dashboard = () => {
       </div>
 
       {/* Middle Sidebar - File Explorer */}
-      <div className={`w-80 bg-[#0d1117] border-r border-gray-800 flex flex-col transition-all duration-300 ${selectedRepo ? 'translate-x-0' : '-translate-x-full absolute opacity-0'}`}>
+      <div className={`w-80 shrink-0 bg-[#0d1117] border-r border-gray-800 flex flex-col transition-all duration-300 ${selectedRepo ? 'ml-0' : '-ml-80 absolute opacity-0'}`}>
         <div className="p-4 border-b border-gray-800">
           <h2 className="text-sm font-bold text-gray-300 uppercase tracking-widest flex flex-col gap-1">
              <span className="text-xs text-gray-500 font-medium normal-case">Repository</span>
@@ -174,32 +217,117 @@ const Dashboard = () => {
       </div>
 
       {/* Main Area - Code Viewer */}
-      <div className="flex-1 bg-[#09090b] flex flex-col relative z-0 overflow-hidden">
+      <div className="flex-1 bg-[#09090b] flex flex-col relative z-0 min-w-0">
         {selectedFile ? (
-          <>
-            <div className="h-14 border-b border-gray-800 border-opacity-50 px-6 flex items-center bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-10 justify-between">
-              <div className="flex items-center gap-2 text-sm text-gray-400">
-                <Code2 size={16} className="text-indigo-400" />
-                <span>{selectedFile.path}</span>
+          <div className="flex flex-1 h-full w-full overflow-hidden">
+            {/* Editor Area */}
+            <div className={`flex flex-col flex-1 h-full min-w-0 transition-all duration-300 ${reviewResult ? 'border-r border-gray-800' : ''}`}>
+              <div className="h-14 border-b border-gray-800 border-opacity-50 px-6 flex items-center bg-[#09090b]/80 backdrop-blur-md sticky top-0 z-10 justify-between shrink-0">
+                <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <Code2 size={16} className="text-indigo-400" />
+                  <span className="truncate">{selectedFile.path}</span>
+                </div>
+                <button 
+                  onClick={handleReviewCode}
+                  disabled={reviewing || loadingFile}
+                  className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-semibold px-4 py-1.5 rounded-full shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2 hover:scale-105 active:scale-95 shrink-0">
+                   {reviewing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} 
+                   {reviewing ? 'Analyzing...' : 'Review with AI'}
+                </button>
               </div>
-              <button className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-1.5 rounded-full shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2 hover:scale-105 active:scale-95">
-                 <Sparkles size={14} /> Review with AI
-              </button>
+              
+              <div className="flex-1 relative overflow-hidden">
+                 {loadingFile ? (
+                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#09090b]/50 backdrop-blur-sm z-20">
+                        <Loader2 className="animate-spin text-indigo-500 mb-4" size={32} />
+                        <p className="text-gray-400">Loading {selectedFile.name}...</p>
+                     </div>
+                 ) : (
+                    <Editor
+                      height="100%"
+                      language={getLanguage(selectedFile.name)}
+                      theme="vs-dark"
+                      value={fileContent || ''}
+                      options={{
+                        readOnly: true,
+                        minimap: { enabled: false },
+                        fontSize: 14,
+                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                        padding: { top: 16 }
+                      }}
+                    />
+                 )}
+              </div>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar text-sm font-mono relative">
-               {loadingFile ? (
-                   <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#09090b]/50 backdrop-blur-sm z-20">
-                      <Loader2 className="animate-spin text-indigo-500 mb-4" size={32} />
-                      <p className="text-gray-400">Loading {selectedFile.name}...</p>
+            {/* AI Review Pane */}
+            {reviewResult && (
+               <div className="w-1/3 min-w-[350px] shrink-0 h-full flex flex-col bg-[#0d1117] overflow-y-auto custom-scrollbar border-l border-gray-800 z-10">
+                 <div className="p-6">
+                   <h3 className="text-lg font-bold text-gray-200 mb-6 flex items-center gap-2 border-b border-gray-800 pb-4">
+                     <Sparkles className="text-indigo-400" /> AI Code Review
+                   </h3>
+                   
+                   <div className="space-y-6">
+                     {/* Bugs Section */}
+                     <div className="space-y-3">
+                       <h4 className="text-sm font-semibold text-red-400 flex items-center gap-2 uppercase tracking-wide">
+                         <Bug size={16} /> Potential Issues
+                       </h4>
+                       {reviewResult.feedback?.bugs?.length > 0 ? (
+                         reviewResult.feedback.bugs.map((item, id) => (
+                           <div key={id} className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                             <div className="font-mono text-xs text-red-400 mb-2">Line {item.line}</div>
+                             <p className="text-gray-300 text-sm mb-2">{item.issue}</p>
+                             <div className="bg-gray-950 p-2 rounded text-xs text-gray-400 border border-gray-800 font-mono whitespace-pre-wrap">{item.suggestion}</div>
+                           </div>
+                         ))
+                       ) : (
+                         <div className="text-sm text-gray-500 italic bg-gray-900/50 p-3 rounded-lg flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> No bugs detected.</div>
+                       )}
+                     </div>
+
+                     {/* Performance Section */}
+                     <div className="space-y-3">
+                       <h4 className="text-sm font-semibold text-yellow-500 flex items-center gap-2 uppercase tracking-wide">
+                         <Zap size={16} /> Performance
+                       </h4>
+                       {reviewResult.feedback?.performance?.length > 0 ? (
+                         reviewResult.feedback.performance.map((item, id) => (
+                           <div key={id} className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                             <div className="font-mono text-xs text-yellow-500 mb-2">Line {item.line}</div>
+                             <p className="text-gray-300 text-sm mb-2">{item.issue}</p>
+                             <div className="bg-gray-950 p-2 rounded text-xs text-gray-400 border border-gray-800 font-mono whitespace-pre-wrap">{item.suggestion}</div>
+                           </div>
+                         ))
+                       ) : (
+                         <div className="text-sm text-gray-500 italic bg-gray-900/50 p-3 rounded-lg flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> Looks optimal.</div>
+                       )}
+                     </div>
+
+                     {/* Clean Code Section */}
+                     <div className="space-y-3">
+                       <h4 className="text-sm font-semibold text-emerald-400 flex items-center gap-2 uppercase tracking-wide">
+                         <CheckCircle2 size={16} /> Clean Code
+                       </h4>
+                       {reviewResult.feedback?.clean_code?.length > 0 ? (
+                         reviewResult.feedback.clean_code.map((item, id) => (
+                           <div key={id} className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+                             <div className="font-mono text-xs text-emerald-400 mb-2">Line {item.line}</div>
+                             <p className="text-gray-300 text-sm mb-2">{item.issue}</p>
+                             <div className="bg-gray-950 p-2 rounded text-xs text-gray-400 border border-gray-800 font-mono whitespace-pre-wrap">{item.suggestion}</div>
+                           </div>
+                         ))
+                       ) : (
+                         <div className="text-sm text-gray-500 italic bg-gray-900/50 p-3 rounded-lg flex items-center gap-2"><CheckCircle2 size={14} className="text-emerald-500" /> No improvements suggested.</div>
+                       )}
+                     </div>
+
                    </div>
-               ) : (
-                  <pre className="text-gray-300 whitespace-pre-wrap highlight-code">
-                    <code>{fileContent}</code>
-                  </pre>
-               )}
-            </div>
-          </>
+                 </div>
+               </div>
+            )}
+          </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-500 select-none">
             {selectedRepo ? (
