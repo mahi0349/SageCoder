@@ -1,7 +1,15 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import dotenv from 'dotenv';
 
-// Uses GEMINI_API_KEY from environment variables automatically
-const ai = new GoogleGenAI({});
+dotenv.config();
+
+const apiKey = process.env.GEMINI_API_KEY;
+
+if (!apiKey) {
+  console.error('FATAL: GEMINI_API_KEY is not set in .env file!');
+}
+
+const ai = new GoogleGenAI({ apiKey });
 
 export const analyzeCode = async (codeSnippet, fileName = '') => {
   const prompt = `You are an expert AI code reviewer. Your task is to perform an in-depth code review on the following snippet.
@@ -16,7 +24,7 @@ export const analyzeCode = async (codeSnippet, fileName = '') => {
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-1.5-pro',
+      model: 'gemini-2.0-flash',
       contents: prompt,
       config: {
         responseMimeType: 'application/json',
@@ -65,11 +73,12 @@ export const analyzeCode = async (codeSnippet, fileName = '') => {
     });
 
     const outputText = response.text;
+    console.log('AI Review raw response:', outputText.substring(0, 200) + '...');
     const jsonOutput = JSON.parse(outputText);
     return jsonOutput;
 
   } catch (error) {
-    console.error('Error generating AI review:', error);
-    throw new Error('Code review generation failed.');
+    console.error('Error generating AI review:', error.message || error);
+    throw new Error(`Code review generation failed: ${error.message}`);
   }
 };
