@@ -1,0 +1,12 @@
+PORT= YOUR_ PORTNUMBER
+MONGODB_URI=mongodb://127.0.0.1:27017/sagecoder
+GEMINI_API_KEY= YOUR_GOOGLE_GEMINI_API_KEY
+
+# GitHub OAuth credentials
+GITHUB_CLIENT_ID= YOUR_GITHUB_CILENT_ID
+GITHUB_CLIENT_SECRET= YOUR_GITHUB_CILENT_SECRET_KEY
+GITHUB_CALLBACK_URL=http://localhost:5000/api/auth/github/callback
+
+# JWT Token
+JWT_SECRET=super_secret_jwt_key_for_sagecoder_development
+FRONTEND_URL=http://localhost:5173
