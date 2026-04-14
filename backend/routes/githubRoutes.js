@@ -83,4 +83,59 @@ router.get('/repos/:owner/:repo/contents', protect, async (req, res) => {
   }
 });
 
+// New helper to fetch multiple files for context
+export const fetchRepoContext = async (owner, repo, branch, accessToken) => {
+  const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
+  const tree = await fetchFromGithub(treeUrl, accessToken);
+  
+  // Filter for relevant source files
+  const relevantExtensions = ['.js', '.jsx', '.ts', '.tsx', '.py', '.java', '.go', '.html', '.css'];
+  const excludeFolders = ['node_modules', 'dist', 'build', '.git', '.github', 'vendor'];
+  
+  const filesToFetch = tree.tree.filter(item => {
+    if (item.type !== 'blob') return false;
+    const isExcluded = excludeFolders.some(folder => item.path.includes(folder));
+    const hasRightExt = relevantExtensions.some(ext => item.path.endsWith(ext));
+    return hasRightExt && !isExcluded;
+  })
+  .slice(0, 20); // Limit to top 20 files to prevent context overload
+
+  const fileContents = await Promise.all(
+    filesToFetch.map(async (file) => {
+      try {
+        const contentData = await fetchFromGithub(
+          `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(file.path)}?ref=${branch}`,
+          accessToken
+        );
+        return {
+          path: file.path,
+          content: Buffer.from(contentData.content, 'base64').toString('utf-8')
+        };
+      } catch (err) {
+        console.error(`Failed to fetch ${file.path}:`, err.message);
+        return null;
+      }
+    })
+  );
+
+  return fileContents.filter(f => f !== null);
+};
+
+// GET /api/github/repos/:owner/:repo/full-context
+router.get('/repos/:owner/:repo/full-context', protect, async (req, res) => {
+  try {
+    const { owner, repo } = req.params;
+    const { branch } = req.query;
+    
+    if (!branch) {
+      return res.status(400).json({ message: 'Branch is required' });
+    }
+
+    const context = await fetchRepoContext(owner, repo, branch, req.user.accessToken);
+    res.json(context);
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Error fetching full repository context' });
+  }
+});
+
 export default router;

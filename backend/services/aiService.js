@@ -72,3 +72,64 @@ Rules:
     throw new Error(`Code review generation failed: ${errMsg}`);
   }
 };
+
+export const analyzeRepository = async (files) => {
+  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+  if (!GROQ_API_KEY) {
+    throw new Error('GROQ_API_KEY is not set.');
+  }
+
+  const systemPrompt = `You are a Senior Project Architect. Analyze the provided repository files and return a comprehensive health report.
+Return ONLY valid JSON with this exact structure:
+{
+  "score": <number 0-100>,
+  "summary": "<string>",
+  "strengths": ["<string>", ...],
+  "weaknesses": ["<string>", ...],
+  "recommendations": ["<string>", ...],
+  "categories": {
+    "architecture": <number 0-100>,
+    "security": <number 0-100>,
+    "maintainability": <number 0-100>,
+    "performance": <number 0-100>
+  }
+}
+Rules:
+- Conduct a high-level review of the project's structure, consistency, and patterns.
+- "score" is a weighted average of the categories.
+- Be critical but constructive.
+- Do NOT include any text outside the JSON.`;
+
+  const filesContext = files.map(f => `File: ${f.path}\n---\n${f.content}\n---`).join('\n\n');
+  const userPrompt = `Analyze this code repository base:\n\n${filesContext}`;
+
+  try {
+    const response = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.2,
+        max_tokens: 4096,
+        response_format: { type: 'json_object' }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const content = response.data.choices[0].message.content;
+    return JSON.parse(content);
+
+  } catch (error) {
+    console.error('Error in analyzeRepository:', error.message);
+    throw new Error(`Repository analysis failed: ${error.message}`);
+  }
+};

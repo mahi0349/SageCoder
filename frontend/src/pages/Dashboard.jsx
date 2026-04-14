@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { fetchApi } from '../api';
 import FileTree from '../components/FileTree';
+import RepoHealthReport from '../components/RepoHealthReport';
 import { Editor, useMonaco } from '@monaco-editor/react';
-import { GitBranch, FolderGit2, Search, Loader2, Code2, Sparkles, LogOut, Bug, Zap, CheckCircle2 } from 'lucide-react';
+import { GitBranch, FolderGit2, Search, Loader2, Code2, Sparkles, LogOut, Bug, Zap, CheckCircle2, Shield } from 'lucide-react';
 
 const getLanguage = (fileName) => {
   if (!fileName) return 'javascript';
@@ -36,6 +37,10 @@ const Dashboard = () => {
 
   const [reviewing, setReviewing] = useState(false);
   const [reviewResult, setReviewResult] = useState(null);
+  
+  const [scanningRepo, setScanningRepo] = useState(false);
+  const [repoReport, setRepoReport] = useState(null);
+  const [showRepoReport, setShowRepoReport] = useState(false);
 
   const monaco = useMonaco();
   const editorRef = useRef(null);
@@ -124,6 +129,48 @@ const Dashboard = () => {
       setReviewing(false);
     }
   };
+
+  const handleScanRepository = async () => {
+    if (!selectedRepo) return;
+    setScanningRepo(true);
+    setRepoReport(null);
+    try {
+      const result = await fetchApi('/reviews/repository', {
+        method: 'POST',
+        body: JSON.stringify({
+          owner: selectedRepo.owner.login,
+          repo: selectedRepo.name,
+          branch: selectedRepo.default_branch
+        })
+      });
+      setRepoReport(result);
+      setShowRepoReport(true);
+    } catch (error) {
+      console.error("Repo scan fail", error);
+      alert(error.message);
+    } finally {
+      setScanningRepo(false);
+    }
+  };
+
+  const fetchExistingRepoReport = async (repo) => {
+    try {
+      const data = await fetchApi(`/reviews/repository/${repo.owner.login}/${repo.name}`);
+      if (data) {
+        setRepoReport(data);
+      } else {
+        setRepoReport(null);
+      }
+    } catch (err) {
+      console.error("Fetch existing report fail", err);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedRepo) {
+      fetchExistingRepoReport(selectedRepo);
+    }
+  }, [selectedRepo]);
 
   const handleEditorDidMount = (editor) => {
     editorRef.current = editor;
@@ -243,6 +290,24 @@ const Dashboard = () => {
              <span className="text-xs text-gray-500 font-medium normal-case">Repository</span>
              {selectedRepo?.name}
           </h2>
+          <div className="mt-4 space-y-2">
+            <button 
+              onClick={handleScanRepository}
+              disabled={scanningRepo}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold py-2 rounded-lg shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2"
+            >
+              {scanningRepo ? <Loader2 size={14} className="animate-spin" /> : <Shield size={14} />}
+              {scanningRepo ? 'Scanning Repo...' : 'Full Project Scan'}
+            </button>
+            {repoReport && !scanningRepo && (
+               <button 
+                onClick={() => setShowRepoReport(true)}
+                className="w-full bg-gray-800 hover:bg-gray-700 text-indigo-400 text-xs font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-2 border border-gray-700"
+               >
+                 <Zap size={14} /> View Latest Mark: {repoReport.score}%
+               </button>
+            )}
+          </div>
         </div>
         
         <div className="flex-1 overflow-y-auto p-2 custom-scrollbar text-gray-300">
@@ -409,6 +474,13 @@ const Dashboard = () => {
           </div>
         )}
       </div>
+
+      {showRepoReport && (
+        <RepoHealthReport 
+          report={repoReport} 
+          onClose={() => setShowRepoReport(false)} 
+        />
+      )}
 
     </div>
   );
