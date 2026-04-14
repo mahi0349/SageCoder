@@ -1,84 +1,74 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import axios from 'axios';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const apiKey = process.env.GEMINI_API_KEY;
-
-if (!apiKey) {
-  console.error('FATAL: GEMINI_API_KEY is not set in .env file!');
-}
-
-const ai = new GoogleGenAI({ apiKey });
-
 export const analyzeCode = async (codeSnippet, fileName = '') => {
-  const prompt = `You are an expert AI code reviewer. Your task is to perform an in-depth code review on the following snippet.
-  Give specific feedback categorized into "bugs", "performance", and "clean_code" (which includes readability, best practices, maintainability).
-  For each issue, point out the line number (best guess relative to snippet or exact if provided) and a concrete suggestion.
-  
-  Code (File: ${fileName}):
-  \`\`\`
-  ${codeSnippet}
-  \`\`\`
-  `;
+  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+  if (!GROQ_API_KEY) {
+    throw new Error('GROQ_API_KEY is not set in .env file. Get one free at https://console.groq.com/keys');
+  }
+
+  const systemPrompt = `You are an expert AI code reviewer. Analyze code and return ONLY valid JSON with this exact structure:
+{
+  "bugs": [{"line": <number>, "issue": "<string>", "suggestion": "<string>"}],
+  "performance": [{"line": <number>, "issue": "<string>", "suggestion": "<string>"}],
+  "clean_code": [{"line": <number>, "issue": "<string>", "suggestion": "<string>"}]
+}
+Rules:
+- "bugs" = potential bugs, logical errors, edge cases
+- "performance" = performance bottlenecks, unnecessary ops
+- "clean_code" = readability, best practices, maintainability
+- "line" = approximate line number in the snippet
+- Return empty arrays if no issues found in a category
+- Do NOT include any explanation outside the JSON`;
+
+  const userPrompt = `Review this code file (${fileName || 'snippet'}):\n\n${codeSnippet}`;
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            bugs: {
-              type: Type.ARRAY,
-              description: 'Potential bugs, logical errors, or edge cases.',
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  line: { type: Type.INTEGER, description: 'Line number of the issue' },
-                  issue: { type: Type.STRING, description: 'Nature of the bug' },
-                  suggestion: { type: Type.STRING, description: 'How to fix the bug' }
-                }
-              }
-            },
-            performance: {
-              type: Type.ARRAY,
-              description: 'Performance bottlenecks, unnecessary operations.',
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  line: { type: Type.INTEGER, description: 'Line number' },
-                  issue: { type: Type.STRING, description: 'Nature of the performance issue' },
-                  suggestion: { type: Type.STRING, description: 'How to optimize' }
-                }
-              }
-            },
-            clean_code: {
-              type: Type.ARRAY,
-              description: 'Clean code, readability, style, and best practice issues.',
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  line: { type: Type.INTEGER, description: 'Line number' },
-                  issue: { type: Type.STRING, description: 'Nature of the code smell' },
-                  suggestion: { type: Type.STRING, description: 'How to refactor' }
-                }
-              }
-            }
-          }
+    const response = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 4096,
+        response_format: { type: 'json_object' }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
         }
       }
-    });
+    );
 
-    const outputText = response.text;
-    console.log('AI Review raw response:', outputText.substring(0, 200) + '...');
-    const jsonOutput = JSON.parse(outputText);
-    return jsonOutput;
+    const content = response.data.choices[0].message.content;
+    console.log('AI Review raw response:', content.substring(0, 200) + '...');
+    const jsonOutput = JSON.parse(content);
+
+    // Ensure all three keys exist
+    return {
+      bugs: jsonOutput.bugs || [],
+      performance: jsonOutput.performance || [],
+      clean_code: jsonOutput.clean_code || []
+    };
 
   } catch (error) {
-    console.error('Error generating AI review:', error.message || error);
-    throw new Error(`Code review generation failed: ${error.message}`);
+    const errMsg = error.response?.data?.error?.message || error.message || JSON.stringify(error);
+    console.error('Error generating AI review:', errMsg);
+
+    if (errMsg.includes('429') || errMsg.includes('rate_limit')) {
+      throw new Error('AI API rate limit reached. Please wait a moment and try again.');
+    }
+    if (errMsg.includes('401') || errMsg.includes('invalid_api_key')) {
+      throw new Error('Invalid AI API key. Please check your GROQ_API_KEY in .env');
+    }
+
+    throw new Error(`Code review generation failed: ${errMsg}`);
   }
 };
