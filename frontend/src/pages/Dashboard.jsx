@@ -172,6 +172,15 @@ const Dashboard = () => {
     }
   }, [selectedRepo]);
 
+  const handleLogout = async () => {
+    try {
+      await fetchApi('/auth/logout', { method: 'POST' });
+      window.location.href = '/login';
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
+
   const handleEditorDidMount = (editor) => {
     editorRef.current = editor;
   };
@@ -277,7 +286,7 @@ const Dashboard = () => {
 
         {/* Footer */}
         <div className="p-4 border-t border-gray-800 mt-auto">
-             <button onClick={() => { window.location.href = 'http://localhost:5000/api/auth/logout' }} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors w-full p-2 hover:bg-gray-800 rounded-lg">
+             <button onClick={handleLogout} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors w-full p-2 hover:bg-gray-800 rounded-lg">
                 <LogOut size={16} /> Logout
              </button>
         </div>
