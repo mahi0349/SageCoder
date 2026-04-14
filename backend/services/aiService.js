@@ -1,14 +1,16 @@
-import axios from 'axios';
+import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 export const analyzeCode = async (codeSnippet, fileName = '') => {
-  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-  if (!GROQ_API_KEY) {
-    throw new Error('GROQ_API_KEY is not set in .env file. Get one free at https://console.groq.com/keys');
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not set in .env file.');
   }
+
+  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
   const systemPrompt = `You are an expert AI code reviewer. Analyze code and return ONLY valid JSON with this exact structure:
 {
@@ -27,29 +29,26 @@ Rules:
   const userPrompt = `Review this code file (${fileName || 'snippet'}):\n\n${codeSnippet}`;
 
   try {
-    const response = await axios.post(
-      'https://api.groq.com/openai/v1/chat/completions',
-      {
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
+    const response = await ai.models.generateContent({
+      model: 'gemini-flash-latest',
+      contents: userPrompt,
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: 'application/json',
         temperature: 0.3,
-        max_tokens: 4096,
-        response_format: { type: 'json_object' }
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${GROQ_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
       }
-    );
+    });
 
-    const content = response.data.choices[0].message.content;
+    const content = response.text;
     console.log('AI Review raw response:', content.substring(0, 200) + '...');
-    const jsonOutput = JSON.parse(content);
+    
+    let jsonOutput;
+    try {
+      jsonOutput = JSON.parse(content);
+    } catch (parseError) {
+      console.error('Failed to parse AI review JSON. Raw content:', content);
+      throw new Error('AI returned an invalid response format.');
+    }
 
     // Ensure all three keys exist
     return {
@@ -59,26 +58,19 @@ Rules:
     };
 
   } catch (error) {
-    const errMsg = error.response?.data?.error?.message || error.message || JSON.stringify(error);
-    console.error('Error generating AI review:', errMsg);
-
-    if (errMsg.includes('429') || errMsg.includes('rate_limit')) {
-      throw new Error('AI API rate limit reached. Please wait a moment and try again.');
-    }
-    if (errMsg.includes('401') || errMsg.includes('invalid_api_key')) {
-      throw new Error('Invalid AI API key. Please check your GROQ_API_KEY in .env');
-    }
-
-    throw new Error(`Code review generation failed: ${errMsg}`);
+    console.error('Error generating AI review:', error.message);
+    throw new Error(`Code review generation failed: ${error.message}`);
   }
 };
 
 export const analyzeRepository = async (files) => {
-  const GROQ_API_KEY = process.env.GROQ_API_KEY;
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-  if (!GROQ_API_KEY) {
-    throw new Error('GROQ_API_KEY is not set.');
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not set. Please enable it in .env');
   }
+
+  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
   const systemPrompt = `You are a Senior Project Architect. Analyze the provided repository files and return a comprehensive health report.
 Return ONLY valid JSON with this exact structure:
@@ -105,31 +97,27 @@ Rules:
   const userPrompt = `Analyze this code repository base:\n\n${filesContext}`;
 
   try {
-    const response = await axios.post(
-      'https://api.groq.com/openai/v1/chat/completions',
-      {
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
+    const response = await ai.models.generateContent({
+      model: 'gemini-flash-latest',
+      contents: userPrompt,
+      config: {
+        systemInstruction: systemPrompt,
+        responseMimeType: 'application/json',
         temperature: 0.2,
-        max_tokens: 4096,
-        response_format: { type: 'json_object' }
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${GROQ_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
       }
-    );
+    });
 
-    const content = response.data.choices[0].message.content;
-    return JSON.parse(content);
+    const content = response.text;
+    
+    try {
+      return JSON.parse(content);
+    } catch (parseError) {
+      console.error('Failed to parse repository analysis JSON. Raw content:', content);
+      throw new Error('AI returned an invalid repository analysis format.');
+    }
 
   } catch (error) {
-    console.error('Error in analyzeRepository:', error.message);
+    console.error('Error generating repository AI review:', error.message);
     throw new Error(`Repository analysis failed: ${error.message}`);
   }
 };
